@@ -39,15 +39,28 @@ class ExpenseController extends Controller
         $request->validate([
             'amount' => 'required|numeric',
             'description' => 'required|string',
+            'tags' => 'array',
+            'tags.*' => 'string'
         ]);
-
+    
         $expense = new Expense;
         $expense->amount = $request->amount;
         $expense->description = $request->description;
         $expense->user_id = auth()->id();
         $expense->save();
-
-        return response()->json($expense, 201);
+    
+        if ($request->has('tags')) {
+            $tagId = [];
+    
+            foreach ($request->tags as $tagName) {
+                $tag = Tag::firstOrCreate(['name' => $tagName]);
+                $tagId[] = $tag->id;
+            }
+    
+            $expense->tags()->sync($tagId);
+        }
+    
+        return response()->json($expense->load('tags'), 201);
     }
 
     /**
@@ -58,7 +71,8 @@ class ExpenseController extends Controller
      */
     public function show($id)
     {
-        $expense = auth()->user()->expenses()->findOrFail($id);
+        $this->authorize('view',$expense);
+        $expense = auth()->user()->expenses()->with('tags')->findOrFail($id);
         return response()->json($expense);
     }
 
@@ -82,9 +96,12 @@ class ExpenseController extends Controller
      */
     public function update(Request $request, $id)
     {
+        $this->authorize('view', $expense);
         $request->validate([
             'amount' => 'required|numeric',
             'description' => 'required|string',
+            'tags' => 'array',
+            'tags.*' => 'string'
         ]);
 
         $expense = auth()->user()->expenses()->findOrFail($id);
@@ -92,7 +109,17 @@ class ExpenseController extends Controller
         $expense->description = $request->description;
         $expense->save();
 
-        return response()->json($expense);
+        if($request->tags) {
+            $tagIds = [];
+
+            foreach ($request->tags as $tagName) {
+                $tag = Tag::firstOrCreate(['name' => $tagName]);
+                $tagIds[] = $tag->id;
+            }
+            $expense->tags()->sync($tagIds);
+        }
+
+        return response()->json($expense->load('tags'));
     }
 
     /**
@@ -103,7 +130,9 @@ class ExpenseController extends Controller
      */
     public function destroy($id)
     {
+        $this->authorize('view',$expense);
         $expense = auth()->user()->expenses()->findOrFail($id);
+        $expense->tags()->detach(); 
         $expense->delete();
 
         return response()->json(['message' => 'Expense deleted successfully']);
